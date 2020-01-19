@@ -22,10 +22,10 @@ inputs:
     required: false
   channel:
     description: 'slack channel'
-    required: false
-  url:
-    description: 'slack incoming webhook url'
-    required: false
+    required: true
+  slack_token:
+    description: 'slack token'
+    required: true
   commit:
     description: 'whether include commit data or not (true or false)'
     required: false

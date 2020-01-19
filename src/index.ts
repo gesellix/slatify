@@ -1,8 +1,7 @@
 import * as core from '@actions/core';
-import {IncomingWebhookDefaultArguments} from '@slack/webhook';
 
-import {validateStatus, isValidCondition} from './utils';
-import {Slack} from './slack';
+import {isValidCondition, validateStatus} from './utils';
+import {Slack, SlackOptions} from './slack';
 
 async function run() {
   try {
@@ -10,16 +9,16 @@ async function run() {
       core.getInput('type', {required: true}).toLowerCase()
     );
     const jobName: string = core.getInput('job_name', {required: true});
-    const url: string = process.env.SLACK_WEBHOOK || core.getInput('url');
     let mention: string = core.getInput('mention');
     let mentionCondition: string = core.getInput('mention_if').toLowerCase();
-    const slackOptions: IncomingWebhookDefaultArguments = {
+    const slackOptions: SlackOptions = {
+      token: process.env.SLACK_TOKEN || core.getInput('slack_token'),
+      channel: process.env.SLACK_CHANNEL || core.getInput('channel'),
       username: core.getInput('username'),
-      channel: core.getInput('channel'),
       icon_emoji: core.getInput('icon_emoji')
     };
     const commitFlag: boolean = core.getInput('commit') === 'true';
-    const token: string = core.getInput('token');
+    const gitHubToken: string = core.getInput('token');
 
     if (mention && !isValidCondition(mentionCondition)) {
       mention = '';
@@ -30,25 +29,33 @@ async function run() {
       `);
     }
 
-    if (url === '') {
-      throw new Error(`[Error] Missing Slack Incoming Webhooks URL.
-      Please configure "SLACK_WEBHOOK" as environment variable or
-      specify the key called "url" in "with" section.
+    if (slackOptions.token === '') {
+      throw new Error(`[Error] Missing Slack Token.
+      Please configure "SLACK_TOKEN" as environment variable or
+      specify the key called "slack_token" in "with" section.
+      `);
+    }
+
+    if (slackOptions.channel === '') {
+      throw new Error(`[Error] Missing Slack Channel.
+      Please configure "SLACK_CHANNEL" as environment variable or
+      specify the key called "channel" in "with" section.
       `);
     }
 
     const slack = new Slack();
     const payload = await slack.generatePayload(
+      slackOptions,
       jobName,
       status,
       mention,
       mentionCondition,
       commitFlag,
-      token
+      gitHubToken
     );
     console.info(`Generated payload for slack: ${JSON.stringify(payload)}`);
 
-    await slack.notify(url, slackOptions, payload);
+    await slack.notify(slackOptions.token, payload);
     console.info('Sent message to Slack');
   } catch (err) {
     core.setFailed(err.message);

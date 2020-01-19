@@ -1,18 +1,19 @@
 import * as github from '@actions/github';
 import Octokit from '@octokit/rest';
 import {MessageAttachment, MrkdwnElement} from '@slack/types';
-import {
-  IncomingWebhook,
-  IncomingWebhookSendArguments,
-  IncomingWebhookResult,
-  IncomingWebhookDefaultArguments
-} from '@slack/webhook';
 import {Context} from '@actions/github/lib/context';
-import {thisExpression} from '@babel/types';
+import {ChatPostMessageArguments, ErrorCode, WebClient} from '@slack/web-api';
 
 interface Accessory {
   color: string;
   result: string;
+}
+
+export interface SlackOptions {
+  token: string;
+  channel: string;
+  username: string;
+  icon_emoji: string;
 }
 
 class Block {
@@ -136,16 +137,17 @@ export class Slack {
    * @param {string} status
    * @param {string} mention
    * @param {string} mentionCondition
-   * @returns {IncomingWebhookSendArguments}
+   * @returns {ChatPostMessageArguments}
    */
   public async generatePayload(
+    slackOptions: SlackOptions,
     jobName: string,
     status: string,
     mention: string,
     mentionCondition: string,
     commitFlag: boolean,
-    token?: string
-  ): Promise<IncomingWebhookSendArguments> {
+    gitHubToken?: string
+  ): Promise<ChatPostMessageArguments> {
     const slackBlockUI = new Block();
     const notificationType: Accessory = slackBlockUI[status];
     const tmpText: string = `${jobName} ${notificationType.result}`;
@@ -158,9 +160,9 @@ export class Slack {
       fields: slackBlockUI.baseFields
     };
 
-    if (commitFlag && token) {
+    if (commitFlag && gitHubToken) {
       const commitFields: MrkdwnElement[] = await slackBlockUI.getCommitFields(
-        token
+        gitHubToken
       );
       Array.prototype.push.apply(baseBlock.fields, commitFields);
     }
@@ -170,7 +172,8 @@ export class Slack {
       blocks: [baseBlock]
     };
 
-    const payload: IncomingWebhookSendArguments = {
+    const payload: ChatPostMessageArguments = {
+      channel: slackOptions.channel,
       text,
       attachments: [attachments],
       unfurl_links: true
@@ -181,21 +184,30 @@ export class Slack {
 
   /**
    * Notify information about github actions to Slack
-   * @param {IncomingWebhookSendArguments} payload
-   * @returns {Promise<IncomingWebhookResult>} result
+   * @param {string} token
+   * @param {ChatPostMessageArguments} payload
+   * @returns {Promise<void>} result
    */
   public async notify(
-    url: string,
-    options: IncomingWebhookDefaultArguments,
-    payload: IncomingWebhookSendArguments
+    token: string,
+    payload: ChatPostMessageArguments
   ): Promise<void> {
-    const client: IncomingWebhook = new IncomingWebhook(url, options);
-    const response: IncomingWebhookResult = await client.send(payload);
-
-    if (response.text !== 'ok') {
+    const web = new WebClient(token);
+    try {
+      const result = await web.chat.postMessage(payload);
+      console.log('Message sent successfully', result.ts);
+    } catch (error) {
+      console.log('An error occurred', error);
+      // Check the code property, and when its a PlatformError, log the whole response.
+      if (error.code === ErrorCode.PlatformError) {
+        console.log(error.data);
+      } else {
+        // Some other error, oh no!
+        console.log('Well, that was unexpected.');
+      }
       throw new Error(`
       Failed to send notification to Slack
-      Response: ${response.text}
+      Response: ${error.data}
       `);
     }
   }
